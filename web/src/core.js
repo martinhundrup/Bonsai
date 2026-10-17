@@ -1,4 +1,6 @@
 // JSON paths are encoded as arrays so keys containing /, dots, or ~ stay distinct.
+import { nodeAppearance } from './appearance.js';
+import { normalizePotSettings } from './pot.js';
 export const pathId = path => JSON.stringify(path);
 export const typeOf = value => value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
 export const canAddChild = node => !!node && ['object', 'array', 'null'].includes(node.type);
@@ -66,7 +68,7 @@ export function restoreAll(doc) {
 }
 
 function snapshot(doc) {
-  return { data: doc.data, nodes: doc.nodes, byId: doc.byId, excluded: new Set(doc.excluded), collapsed: new Set(doc.collapsed), selected: doc.selected, empty: doc.empty };
+  return { name: doc.name, data: doc.data, nodes: doc.nodes, byId: doc.byId, excluded: new Set(doc.excluded), collapsed: new Set(doc.collapsed), selected: doc.selected, empty: doc.empty, potSettings: doc.potSettings };
 }
 function remember(doc) {
   doc.history.push(snapshot(doc));
@@ -77,6 +79,33 @@ function remember(doc) {
 export function undo(doc) {
   if (!doc.history.length) return;
   doc.future.push(snapshot(doc)); Object.assign(doc, doc.history.pop());
+}
+
+export function setNodeAppearance(doc, id, patch, checkpoint = true) {
+  if (!doc.byId.has(id)) return;
+  if (checkpoint) remember(doc);
+  doc.nodes = doc.nodes.map(node => node.id === id ? { ...node, appearance: nodeAppearance({ ...node.appearance, ...patch }) } : node);
+  doc.byId = new Map(doc.nodes.map(node => [node.id, node]));
+}
+
+export function setAllNodeAppearance(doc, patch, checkpoint = true) {
+  let changed = false;
+  const nodes = doc.nodes.map(node => {
+    const current = nodeAppearance(node.appearance), appearance = nodeAppearance({ ...current, ...patch });
+    if (current.size === appearance.size && current.rounding === appearance.rounding) return node;
+    changed = true;
+    return { ...node, appearance };
+  });
+  if (!changed) return false;
+  if (checkpoint) remember(doc);
+  doc.nodes = nodes;
+  doc.byId = new Map(nodes.map(node => [node.id, node]));
+  return true;
+}
+
+export function setPotSettings(doc, patch, checkpoint = true) {
+  if (checkpoint) remember(doc);
+  doc.potSettings = normalizePotSettings({ ...doc.potSettings, ...patch });
 }
 
 export function redo(doc) {
@@ -91,15 +120,48 @@ function changeAt(value, path, change) {
   Object.defineProperty(copy, key, { value: changeAt(value[key], rest, change), enumerable: true, writable: true, configurable: true });
   return copy;
 }
-function rebuild(doc, data, nodeIds, selected, expand) {
+function rebuild(doc, data, nodeIds, selected, expand, name = doc.name) {
   // Build and validate first, so a rejected edit leaves history and data intact.
-  const next = createDocument(doc.name, data, { nodeIds, freshIds: true });
+  const next = createDocument(name, data, { nodeIds, freshIds: true });
+  next.nodes = next.nodes.map(node => doc.byId.get(node.id)?.appearance ? { ...node, appearance: doc.byId.get(node.id).appearance } : node);
+  next.byId = new Map(next.nodes.map(node => [node.id, node]));
   next.excluded = new Set([...doc.excluded].filter(id => next.byId.has(id)));
   next.collapsed = new Set([...doc.collapsed].filter(id => next.byId.has(id)));
   if (expand) next.collapsed.delete(expand);
   remember(doc);
-  Object.assign(doc, { data, nodes: next.nodes, byId: next.byId, excluded: next.excluded, collapsed: next.collapsed, empty: false, selected: next.byId.has(selected) ? selected : '[]' });
+  Object.assign(doc, { name, data, nodes: next.nodes, byId: next.byId, excluded: next.excluded, collapsed: next.collapsed, empty: false, selected: next.byId.has(selected) ? selected : '[]' });
   return next;
+}
+
+export function replaceDocumentData(doc, data) {
+  if (!doc.empty && JSON.stringify(data) === JSON.stringify(doc.data)) return;
+  const ids = new Map(doc.nodes.map(node => [pathId(node.path), node.id]));
+  rebuild(doc, data, ids, doc.selected);
+}
+
+export function editNode(doc, id, key, value) {
+  const node = doc.byId.get(id);
+  if (!node) throw new Error('This node no longer exists.');
+  const parent = doc.byId.get(node.parent);
+  const renaming = parent?.type === 'object' && key !== node.key;
+  if (renaming && Object.hasOwn(parent.value, key)) throw new Error('That key already exists. Choose another key.');
+  const name = node.parent === null ? key.trim() : doc.name;
+  if (!name) throw new Error('Give this tree a name.');
+  if (!renaming && name === doc.name && JSON.stringify(value) === JSON.stringify(node.value)) return;
+  const data = renaming ? changeAt(doc.data, parent.path, current => {
+    const copy = {};
+    for (const existing of Object.keys(current)) Object.defineProperty(copy, existing === node.key ? key : existing, {
+      value: existing === node.key ? value : current[existing], enumerable: true, writable: true, configurable: true,
+    });
+    return copy;
+  }) : changeAt(doc.data, node.path, () => value);
+  const ids = new Map();
+  for (const existing of doc.nodes) {
+    const path = [...existing.path];
+    if (renaming && path.length >= node.path.length && node.path.every((part, index) => path[index] === part)) path[node.path.length - 1] = key;
+    ids.set(pathId(path), existing.id);
+  }
+  rebuild(doc, data, ids, id, undefined, name);
 }
 export function addNode(doc, parentId, key, value) {
   if (doc.empty) {

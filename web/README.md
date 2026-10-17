@@ -89,7 +89,7 @@ Official instructions: [Upload a custom website](https://www.hostinger.com/suppo
 - Use **New blank tree** to start with an empty pot, choose a name and species, and add a root value. Select miniature potted trees on the wooden shelves of the **Bonsai bench**, rename the active tree in the title, or remove a tree from the saved bench. Each silhouette reflects its JSON branches and species. Import several JSON files, or drop them anywhere. Invalid files show an error; valid files in the same batch still load.
 - Each tree retains its pruning, expansion, selection, graph camera, and dragged node/pot positions. The bench automatically saves after changes and restores after reload. Undo/redo history lasts for the current session. Each species has a distinct growth algorithm: elm uses a winding leader and alternating shoots; maple opens elliptical fans; pine builds an apex with staggered pads; juniper follows a sweeping wind field; ficus spreads into boughs and hanging aerial branches. Changing species retrains the whole visible crown while keeping the root, pot, camera, and JSON intact. Each species also colors the tree, list controls, and bench icon: elm green, maple burgundy, pine evergreen, juniper blue-green, and ficus olive. Manual placement remains available.
 - Expand/collapse changes only the view. Inclusion switches prune branches and their descendants from the output.
-- The live preview, copy, and export all use the pruned JSON. Export downloads `filename.pruned.json`; original files stay unchanged.
+- The right pane's **Edit** tab contains the full JSON source; **Export** previews the pruned JSON. Copy follows the selected tab. File exports use `filename.pruned.json`; original imported files stay unchanged.
 - Use the arrow in the JSON preview header to collapse or reopen it. Collapsing gives the graph more space on desktop and folds the preview below the graph on mobile.
 - Hover a branch to reveal a plus button that adds a child to its parent object or array. Null nodes also have add-child controls: adding a named child converts the null into an object, including at the root or inside arrays. Undo restores the original null. Node controls also delete a node with its descendants. New values accept JSON; object keys must be unique.
 - Every JSON node can be deleted, including the root. Delete all clears the tree; Add root node starts it again. Empty trees disable copy and export. Undo/redo covers additions, deletions, clearing, and pruning; Restore all restores excluded branches. Use Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z, and Ctrl/Cmd+S for undo, redo, and export. Delete or Backspace removes a focused node.
@@ -104,9 +104,72 @@ The graph uses native SVG text and shapes; zoom changes the SVG `viewBox`. The d
 
 Bench miniatures use saved node positions, with a representative overview of large trees and independently fitted axes so wide canopies retain their height. All wood renders behind all foliage, with the pot front covering the base of the trunk. Species change trunk thickness, taper, curves, bark, and grain in both the editor and the miniature, from slender maple wood to stout ficus trunks. Growth patterns use stable JSON paths so repeated style changes and reloads preserve the same character.
 
+Trunk girth starts at the soil, scales with the total tree height and species, and tapers along the full path through the nodes. Forks divide the wood between their branches; thickness never restarts at a card. **Base thickness** adjusts the species base from 25% to 200%, and **Taper amount** adjusts narrowing from 0% to 100%. Both sliders support keyboard input, update the editor and bench miniature live, and save per tree. **Reset trunk** restores the species defaults. Plant names and species wrap fully within their bench slots.
+
+Use **Clear cookies & saved trees** below the bench to remove Bonsai's saved collection and selection cookie from this browser. The confirmation offers **Keep my trees** or **Clear saved data**. Export any trees you want to keep first. Other apps' browser storage stays intact, and autosave does not restore the cleared collection. Creating or importing a new tree starts saving again.
+
 The root stays included until deleted. Pruned or deleted array items are removed and remaining items reindexed, preserving their node identities. All JSON root types are supported, including primitives and null. Limits: 10 MB, 25,000 nodes, and 200 nested levels per file. Numbers follow JavaScript JSON semantics.
 
 The bench is saved to localStorage on this browser and device. A first-party cookie remembers the selected tree for up to a year; full tree data stays in browser storage. Storage failures show a warning; export your trees if storage is full or blocked. Clearing browser data removes your bench. Export JSON for backups or use on another device. Unreadable saved benches are preserved rather than overwritten. Google Fonts are optional external styling resources; system fonts are the fallback.
+
+Each node has two small dots at its lower-right corner. Drag the outer dot outward
+to grow or inward to shrink; drag the inset dot inward to round or outward to
+square the corners. They brighten on hover or keyboard focus. Full rounding makes
+a circle; size ranges from 55% to 165%. Use arrow keys, Home, or End when a dot
+is focused. Appearance saves per node, survives structural edits and undo/redo,
+and appears in the bench miniature. Resizing updates collision space, branch
+connections, and camera fitting. JSON export contains only the tree's data.
+
+The outer size dot sits clear of the node's corner. Use **Fullscreen tree editor**
+in the canvas toolbar to fill the screen with the tree and its editing controls.
+Use **Exit fullscreen** or Escape to return. Browsers without native fullscreen
+expand the editor to fill the viewport. Node placement and zoom stay intact.
+Species selection, base thickness, taper, and reset live in the graph header and
+remain available in fullscreen on desktop and mobile.
+The selector and both sliders sit inline in the top row, including on mobile.
+The graph header's **All node size** and **All roundness** sliders adjust every
+node in the current tree, including collapsed and pruned branches. Each changes
+only its own property; **Mixed** indicates differing individual settings. Changes
+save automatically, and one drag undoes as one step. Both work in fullscreen.
+
+The canvas adapts to each node's screen size. Close nodes show full editing cards;
+medium nodes show one enlarged, readable key; distant nodes show only their
+shape. All levels preserve size, roundness, and species colors. Tiny switches, corner dots, add/delete buttons, and pot
+controls stay hidden until there is room to use them. Double-click a node, or
+focus it and press Enter, to open its editor; simplified nodes zoom in first.
+Zooming preserves the
+tree's placement, custom node shapes, and JSON.
+
+Edit JSON directly in the right pane, then choose **Apply** or press Ctrl+Enter
+(Cmd+Enter on macOS) to update the tree. **Revert** restores the current tree's
+source. Invalid JSON leaves the tree intact, and unapplied drafts remain separate
+when switching trees. The source includes pruned branches so editing it does not
+silently delete them; the **Export** tab shows what will actually be exported.
+Syntax colors stay visible while typing. Errors highlight their line and character;
+click the line/column message below the editor to jump to the error.
+
+The node editor changes an object key and its JSON value together, including
+objects, arrays, and primitives. Editing the root can also rename the tree.
+Array item indices follow array order. Renaming preserves the branch's IDs,
+placement, pruning, and custom size/roundness. Applied source and node edits
+support undo/redo and save with the bench.
+
+The selected species also tints the dark UI. Wood extends behind rounded cards
+to avoid flat seams, and the corner dots use circular focus indicators.
+Subtle arrows beside the pot cycle terracotta, celadon, cobalt, and ivory presets.
+The slider below the pot changes its size from 60% to 160%, including collision
+space and camera fitting. Preset and size save per tree, support undo/redo, and
+appear in the bench miniature.
+
+Each preset's shadow sits against its feet. Soil paints behind the trunk, which
+reaches about two-thirds across the soil's visible depth; the curved front wall
+stays above the wood. Both pot layers move and scale together. Type glyphs,
+pruned values, input placeholders, and form labels also follow the species theme.
+
+Export uses the browser's save picker when available and reports **Saved** only
+after writing and closing the file. Cancelling produces no success message.
+Other browsers use a download link; these do not report completion, so no saved
+notification appears for that fallback.
 
 ## Source
 
@@ -122,6 +185,7 @@ The bench is saved to localStorage on this browser and device. A first-party coo
 - `src/elastic.js`: flexible branch joints, yielding neighbors, and return springs during manual movement.
 - `src/components/BenchTree.jsx`: miniature potted silhouettes on the wooden bench.
 - `src/growth.js`: five species-specific growth algorithms and deterministic branch preferences.
+- `src/trunk.js`: continuous height-based trunk profiles, branch flow, and saved slider settings.
 - `src/miniature.js`: sampled overview layout that preserves relative node placement.
 - `tests/`: pruning, document isolation, data safety, and camera regression tests.
 - `vite.config.js`: React build with portable, relative asset paths.

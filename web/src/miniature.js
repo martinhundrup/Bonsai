@@ -1,4 +1,4 @@
-import { branchLayout, branchWeights, nodeMetrics } from './graph.js';
+import { branchLayout, nodeMetrics } from './graph.js';
 import { getSpecies } from './species.js';
 
 // Sample breadth-first, keeping ancestors and every part of a wide canopy
@@ -33,14 +33,14 @@ export function miniatureLayout(doc) {
   for (const node of nodes) {
     const p = raw.get(node.id);
     minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
-    minY = Math.min(minY, p.y + nodeMetrics(node.depth).height / 2);
-    maxY = Math.max(maxY, p.y + nodeMetrics(node.depth).height / 2);
+    minY = Math.min(minY, p.y + nodeMetrics(node).height / 2);
+    maxY = Math.max(maxY, p.y + nodeMetrics(node).height / 2);
   }
   // Fit the axes separately: wide trees retain their relative positions and
   // still occupy the available height instead of becoming a tiny flat stripe.
   const x = value => maxX === minX ? 80 : 34 + (value - minX) / (maxX - minX) * 92;
   const y = value => maxY === minY ? 68 : 12 + (value - minY) / (maxY - minY) * 74;
-  const positions = new Map(nodes.map(node => [node.id, { x: x(raw.get(node.id).x), y: y(raw.get(node.id).y + nodeMetrics(node.depth).height / 2) }]));
+  const positions = new Map(nodes.map(node => [node.id, { x: x(raw.get(node.id).x), y: y(raw.get(node.id).y + nodeMetrics(node).height / 2) }]));
   const radius = Math.max(4.5, Math.min(10, 38 / Math.sqrt(nodes.length)));
   // Keep the complete wood silhouette, but thin out overlapping foliage pads.
   // Otherwise hundreds of leaves turn into solid bars at thumbnail size.
@@ -50,5 +50,5 @@ export function miniatureLayout(doc) {
     if (foliage.some(other => { const q = positions.get(other.id); return Math.hypot(p.x - q.x, p.y - q.y) < gap; })) continue;
     foliage.push(node);
   }
-  return { nodes, foliage, positions, raw, rawPot: doc.arrangement?.pot ?? { x: potX, y: raw.get(nodes[0].id).y + 116 }, potX: x(potX), radius, weights: branchWeights(nodes) };
+  return { nodes, foliage, positions, raw, rawPot: doc.arrangement?.pot ?? { x: potX, y: raw.get(nodes[0].id).y + 116 }, potX: x(potX), radius };
 }

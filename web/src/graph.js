@@ -1,4 +1,6 @@
 import { growthPreferences } from './growth.js';
+import { nodeAppearance } from './appearance.js';
+import { normalizePotSettings } from './pot.js';
 
 export const NODE_WIDTH = 216;
 export const NODE_HEIGHT = 84;
@@ -11,9 +13,16 @@ const BAND = 14;
 
 // A gentle taper stops at 82% so deep JSON stays legible.
 export function nodeMetrics(depth = 0, kind) {
-  if (kind === 'pot') return { scale: 1, width: NODE_WIDTH, height: ROOT_POT_HEIGHT };
-  const scale = 1 - Math.min(4, Math.max(0, depth)) * .045;
-  return { scale, width: NODE_WIDTH * scale, height: NODE_HEIGHT * scale };
+  const node = typeof depth === 'object' ? depth : null;
+  if (node) { kind = node.kind; depth = node.depth; }
+  if (kind === 'pot') {
+    const scale = normalizePotSettings(node?.potSettings).size;
+    return { scale, width: NODE_WIDTH * scale, height: ROOT_POT_HEIGHT * scale };
+  }
+  const { size, rounding } = nodeAppearance(node?.appearance);
+  const scale = (1 - Math.min(4, Math.max(0, depth)) * .045) * size;
+  const localHeight = NODE_HEIGHT + (NODE_WIDTH - NODE_HEIGHT) * rounding;
+  return { scale, width: NODE_WIDTH * scale, height: localHeight * scale, localHeight, radius: 9 + (NODE_WIDTH / 2 - 9) * rounding };
 }
 
 // Pack sibling subtrees using their silhouettes. Each subtree moves as a unit;
@@ -45,20 +54,24 @@ export function branchLayout(nodes, saved = new Map(), preferences = new Map(), 
       const id = children[i];
       if (preferences.has(id)) continue;
       const child = saved.get(id), parent = saved.get(node.id);
-      const step = nodeMetrics(byId.get(id).depth).width + GAP;
+      const step = nodeMetrics(byId.get(id)).width + GAP;
       preferences.set(id, growth?.get(id) ?? (child && parent ? { x: child.x - parent.x, y: child.y - parent.y } : { x: (i - (children.length - 1) / 2) * step, y: -LEVEL }));
     }
   }
   for (let index = nodes.length - 1; index >= 0; index--) {
     const node = nodes[index], children = childrenById.get(node.id);
     const contour = new Map();
-    const metrics = nodeMetrics(node.depth), halfWidth = (metrics.width + GAP) / 2;
+    const metrics = nodeMetrics(node);
+    const angle = 3 * Math.PI / 180;
+    const padX = Math.max(GAP / 2, (metrics.width * Math.cos(angle) + metrics.height * Math.sin(angle) - metrics.width) / 2 + 10);
+    const padY = Math.max(GAP / 2, (metrics.height * Math.cos(angle) + metrics.width * Math.sin(angle) - metrics.height) / 2 + 10);
+    const halfWidth = metrics.width / 2 + padX;
     const footprintHeight = metrics.height;
-    for (let row = -1; row < (footprintHeight + GAP / 2) / BAND; row++) addContour(contour, row, -halfWidth, halfWidth);
+    for (let row = Math.floor(-padY / BAND); row < (footprintHeight + padY) / BAND; row++) addContour(contour, row, -halfWidth, halfWidth);
     if (node.parent === null) {
       const origin = saved.get(node.id) ?? { x: 0, y: 0 };
       for (const obstacle of obstacles) {
-        const size = nodeMetrics(obstacle.node.depth, obstacle.node.kind), x = obstacle.x - origin.x, y = obstacle.y - origin.y;
+        const size = nodeMetrics(obstacle.node), x = obstacle.x - origin.x, y = obstacle.y - origin.y;
         for (let row = Math.floor((y - GAP / 2) / BAND); row < Math.ceil((y + size.height + GAP / 2) / BAND); row++) addContour(contour, row, x - size.width / 2 - GAP / 2, x + size.width / 2 + GAP / 2);
       }
     }
@@ -101,7 +114,7 @@ export function branchLayout(nodes, saved = new Map(), preferences = new Map(), 
     // branches yield before their cards or limbs crowd the opening branch.
     let canopyLeft = -halfWidth, canopyRight = halfWidth;
     for (const bounds of contour.values()) { canopyLeft = Math.min(canopyLeft, bounds.left); canopyRight = Math.max(canopyRight, bounds.right); }
-    for (let row = -1; row < (metrics.height + GAP / 2) / BAND; row++) {
+    for (let row = Math.floor(-padY / BAND); row < (metrics.height + padY) / BAND; row++) {
       addContour(contour, row, Math.min(-halfWidth, canopyLeft * .58), Math.max(halfWidth, canopyRight * .58));
     }
     plans.set(node.id, { contour, placements, count });
@@ -139,7 +152,7 @@ export function branchPaths(parent, child, parentWeight = 1, childWeight = 1, st
   const second = { x: child.x - Math.sin(b) * bend - Math.cos(b) * twist, y: child.y + Math.cos(b) * bend - Math.sin(b) * twist };
   const p = (point, angle, radius, side) => `${point.x + Math.cos(angle) * radius * side},${point.y + Math.sin(angle) * radius * side}`;
   const width = t => base + (tip - base) * t;
-  const forkWidth = width(Math.min(.25, stem / Math.max(1, distance)));
+  const forkWidth = style.baseRadius === undefined ? base : width(Math.min(.25, stem / Math.max(1, distance)));
   const body = `M${p(parent,a,base,-1)} L${p(fork,a,forkWidth,-1)} C${p(first,a,width(.35),-1)} ${p(second,b,width(.75),-1)} ${p(child,b,tip,-1)} L${p(child,b,tip,1)} C${p(second,b,width(.75),1)} ${p(first,a,width(.35),1)} ${p(fork,a,forkWidth,1)} L${p(parent,a,base,1)} Z`;
   const grain = `M${parent.x},${parent.y} L${fork.x},${fork.y} C${first.x},${first.y} ${second.x},${second.y} ${child.x},${child.y}`;
   const midpoint = { x: (fork.x + 3 * first.x + 3 * second.x + child.x) / 8, y: (fork.y + 3 * first.y + 3 * second.y + child.y) / 8 };
@@ -149,8 +162,8 @@ export function branchPaths(parent, child, parentWeight = 1, childWeight = 1, st
 export function graphBounds(positions) {
   if (!positions.size) return { x: 0, y: 0, width: NODE_WIDTH, height: NODE_HEIGHT };
   let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
-  for (const [, { x, y, depth, kind }] of positions) {
-    const metrics = nodeMetrics(depth, kind), height = metrics.height;
+  for (const [, { x, y, depth, kind, node }] of positions) {
+    const metrics = nodeMetrics(node ?? depth, kind), height = metrics.height;
     left = Math.min(left, x - metrics.width / 2 - 32); right = Math.max(right, x + metrics.width / 2 + 32);
     top = Math.min(top, y - 32); bottom = Math.max(bottom, y + height + 32);
   }

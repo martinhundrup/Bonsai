@@ -1,5 +1,6 @@
 import { nodeMetrics } from './graph.js';
 import { getSpecies } from './species.js';
+import { normalizePotSettings } from './pot.js';
 
 const clamp = (value, min, max, fallback) => Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : fallback;
 
@@ -25,7 +26,8 @@ export function trunkProfile(nodes, positions, pot, style, settings, preferences
     const node = nodes[index];
     masses.set(node.id, Math.max(1, node.children.reduce((sum, id) => sum + (masses.get(id) ?? 0), 0)));
   }
-  let totalLength = 1, top = pot.y + 11;
+  const soilY = pot.y + 11 * normalizePotSettings(pot.node?.potSettings ?? pot.potSettings).size;
+  let totalLength = 1, top = soilY;
   for (const node of nodes) {
     const parent = points.get(node.parent), parentStation = stations.get(node.parent);
     const saved = positions.get(node.id), offset = preferences.get(node.id) ?? { x: 0, y: -200 };
@@ -33,15 +35,17 @@ export function trunkProfile(nodes, positions, pot, style, settings, preferences
     points.set(node.id, p);
     const flow = node.parent === null ? 1 : (flows.get(node.parent) ?? 1) * Math.sqrt(masses.get(node.id) / Math.max(1, masses.get(node.parent) ?? 1));
     flows.set(node.id, flow);
-    const height = nodeMetrics(node.depth).height;
-    const from = parent ?? { x: pot.x, y: pot.y + 11 };
+    const height = nodeMetrics(node).height;
+    const from = parent ?? { x: pot.x, y: soilY };
     const incoming = (parentStation?.outgoing ?? 0) + Math.hypot(p.x - from.x, p.y + height - from.y);
     const outgoing = incoming + height;
     stations.set(node.id, { incoming, outgoing });
     totalLength = Math.max(totalLength, outgoing); top = Math.min(top, p.y);
   }
-  const totalHeight = Math.max(80, pot.y + 11 - top);
-  const baseRadius = Math.min(96, (8 + Math.sqrt(totalHeight) * .28) * style.thickness * settings.baseThickness);
+  const totalHeight = Math.max(80, soilY - top);
+  // Cap the default girth before customization, so the slider always responds
+  // even on very tall trees, while the maximum still fits the ceramic pot.
+  const baseRadius = Math.min(48, (8 + Math.sqrt(totalHeight) * .28) * style.thickness) * settings.baseThickness;
   const amount = settings.taperAmount / 100;
   const radius = (station, flow) => Math.max(.8, baseRadius * flow * Math.pow(Math.max(0, 1 - amount * station / totalLength), style.taperPower ?? 1.2));
   return {

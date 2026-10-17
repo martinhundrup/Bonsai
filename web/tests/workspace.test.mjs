@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createBlankTree, serializeWorkspace, deserializeWorkspace, loadWorkspace, saveWorkspace, STORAGE_KEY } from '../src/workspace.js';
+import { createBlankTree, serializeWorkspace, deserializeWorkspace, loadWorkspace, saveWorkspace, clearWorkspaceStorage, STORAGE_KEY } from '../src/workspace.js';
 import { addNode, createDocument, deleteNode, pathId, prune, toggleNode } from '../src/core.js';
 import { species } from '../src/species.js';
 import { branchLayout, POT_NODE, POT_ID } from '../src/graph.js';
@@ -81,4 +81,18 @@ test('browser storage restores without cookies, preserves corrupt saves, and sur
   assert.equal(values.get(STORAGE_KEY), '{broken');
   globalThis.localStorage.setItem = () => { throw new Error('Quota exceeded'); };
   assert.throws(() => saveWorkspace(fresh), /Quota exceeded/);
+});
+
+test('clearing the bench removes Bonsai storage and cookies while preserving other apps', t => {
+  const keys = ['localStorage', 'document', 'location'];
+  const originals = new Map(keys.map(key => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+  t.after(() => { for (const [key, descriptor] of originals) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else delete globalThis[key]; } });
+  const values = new Map([[STORAGE_KEY, 'saved tree'], ['other-app', 'keep']]), cookies = [];
+  Object.defineProperty(globalThis, 'localStorage', { configurable: true, value: { removeItem: key => values.delete(key) } });
+  Object.defineProperty(globalThis, 'document', { configurable: true, value: { set cookie(value) { cookies.push(value); } } });
+  Object.defineProperty(globalThis, 'location', { configurable: true, value: { protocol: 'https:' } });
+  clearWorkspaceStorage();
+  assert.equal(values.has(STORAGE_KEY), false); assert.equal(values.get('other-app'), 'keep');
+  assert.equal(cookies.length, 3);
+  assert.ok(cookies.every(cookie => cookie.startsWith('bonsai_active=; Max-Age=0;') && cookie.includes('Secure')));
 });

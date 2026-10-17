@@ -1,6 +1,8 @@
 import { createDocument, deleteAllNodes, pathId } from './core.js';
 import { getSpecies } from './species.js';
 import { normalizeTrunkSettings } from './trunk.js';
+import { nodeAppearance } from './appearance.js';
+import { normalizePotSettings } from './pot.js';
 
 export const STORAGE_KEY = 'bonsai.bench.v1';
 const COOKIE = 'bonsai_active';
@@ -18,7 +20,9 @@ function saveDocument(doc) {
     id: doc.id, name: doc.name, data: doc.data, empty: doc.empty, sample: doc.sample,
     species: getSpecies(doc.species).id,
     trunkSettings: normalizeTrunkSettings(doc.trunkSettings),
+    potSettings: normalizePotSettings(doc.potSettings),
     nodeIds: doc.nodes.map(node => [pathId(node.path), node.id]),
+    nodeAppearance: doc.nodes.filter(node => node.appearance).map(node => [node.id, nodeAppearance(node.appearance)]),
     excluded: [...doc.excluded], collapsed: [...doc.collapsed], selected: doc.selected,
     camera: doc.camera,
     arrangement: arrangement && {
@@ -47,6 +51,10 @@ export function deserializeWorkspace(text, selectedId) {
     const doc = item.empty ? createBlankTree(item.name, item.species) : createDocument(item.name, item.data, { nodeIds: new Map(item.nodeIds) });
     doc.id = item.id; doc.species = getSpecies(item.species).id; doc.sample = !!item.sample;
     doc.trunkSettings = normalizeTrunkSettings(item.trunkSettings);
+    doc.potSettings = normalizePotSettings(item.potSettings);
+    const appearances = new Map(Array.isArray(item.nodeAppearance) ? item.nodeAppearance.filter(entry => Array.isArray(entry) && typeof entry[0] === 'string') : []);
+    doc.nodes = doc.nodes.map(node => appearances.has(node.id) ? { ...node, appearance: nodeAppearance(appearances.get(node.id)) } : node);
+    doc.byId = new Map(doc.nodes.map(node => [node.id, node]));
     doc.excluded = new Set((item.excluded ?? []).filter(id => id !== '[]' && doc.byId.has(id)));
     doc.collapsed = new Set((item.collapsed ?? []).filter(id => doc.byId.has(id)));
     doc.selected = doc.byId.has(item.selected) ? item.selected : doc.empty ? null : '[]';

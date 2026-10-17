@@ -5,7 +5,7 @@ const CELL = 256, CLEARANCE = 8, EPSILON = .001;
 // Reserve the full sway envelope, not just an unrotated card. The root's pot
 // participates too, so animation cannot rotate visible geometry into a neighbor.
 export function collisionBox(item) {
-  const { width, height } = nodeMetrics(item.node.depth, item.node.kind);
+  const { width, height } = nodeMetrics(item.node);
   const bottom = height;
   let left = Infinity, right = -Infinity, top = Infinity, base = -Infinity;
   for (const angle of [-3, 0, 3]) {
