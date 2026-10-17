@@ -1,0 +1,11 @@
+node_modules/
+dist/
+artifacts/
+.cloudflare/
+.wrangler/
+.dev.vars*
+.env*
+.DS_Store
+*.tar.gz
+test-results/
+.openai/*.local.*
