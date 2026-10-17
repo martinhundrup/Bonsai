@@ -151,3 +151,26 @@ test('duplicate keys and invalid structure do not create history entries', () =>
   assert.equal(Object.getPrototypeOf(doc.data), Object.prototype);
   assert.equal(Object.hasOwn(prune(doc), '__proto__'), true); assert.equal({}.safe, undefined);
 });
+
+test('null branches grow into objects with stable identities and undo restores null', () => {
+  for (const data of [null, { seed: null }, [null]]) {
+    const doc = createDocument('seed.json', data);
+    const parent = doc.nodes.find(node => node.type === 'null');
+    const id = addNode(doc, parent.id, 'shoot', null);
+    assert.equal(doc.byId.get(parent.id).type, 'object');
+    assert.deepEqual(doc.byId.get(id).value, null);
+    addNode(doc, id, 'leaf', 1);
+    assert.equal(doc.byId.get(id).type, 'object');
+    undo(doc); assert.equal(doc.byId.get(id).type, 'null');
+    undo(doc); assert.equal(doc.byId.get(parent.id).type, 'null'); assert.deepEqual(prune(doc), data);
+    redo(doc); assert.equal(doc.byId.get(parent.id).type, 'object');
+  }
+});
+
+test('growing null preserves special keys and leaves source data untouched', () => {
+  const source = { seed: null }, doc = createDocument('seed', source);
+  addNode(doc, pathId(['seed']), '__proto__', { leaf: 1 });
+  assert.deepEqual(source, { seed: null });
+  assert.equal(Object.hasOwn(prune(doc).seed, '__proto__'), true);
+  assert.equal({}.leaf, undefined);
+});

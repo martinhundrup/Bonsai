@@ -65,6 +65,19 @@ export class CollisionWorld {
     return true;
   }
   add(item) { this.store(item.node.id, collisionBox(item)); }
+  firstHit(id, requested) {
+    const box = this.boxes.get(id);
+    if (!box) return null;
+    const { x: dx, y: dy } = requested;
+    const swept = { left: Math.min(box.left, box.left + dx), right: Math.max(box.right, box.right + dx), top: Math.min(box.top, box.top + dy), bottom: Math.max(box.bottom, box.bottom + dy) };
+    let nearest = null;
+    for (const other of this.nearby(swept)) {
+      if (other === id) continue;
+      const hit = sweep(box, this.boxes.get(other), dx, dy);
+      if (hit && (!nearest || hit.time < nearest.time)) nearest = { ...hit, id: other };
+    }
+    return nearest;
+  }
   move(ids, requested) {
     const moving = new Set(ids), total = { x: 0, y: 0 };
     let dx = requested.x, dy = requested.y;

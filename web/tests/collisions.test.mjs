@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CollisionWorld, collisionBox } from '../src/collisions.js';
+import { ElasticDrag } from '../src/elastic.js';
 
 const card = (id, x, y, depth = 1) => ({ node: { id, depth }, x, y });
 function separated(world) {
@@ -54,4 +55,58 @@ test('moving away from contact is free and repeated subpixel motion stays clear'
   for (let i = 0; i < 100; i++) { world.move(['moving'], { x: 10, y: 0 }); separated(world); }
   assert.equal(world.move(['moving'], { x: -75, y: 0 }).x, -75);
   separated(world);
+});
+
+const branchCard = (id, x, y, parent = null, children = [], depth = 1) => ({ node: { id, parent, children, depth }, x, y, opacity: 1 });
+
+test('a dragged parent keeps moving when its child meets another branch', () => {
+  const parent = branchCard('parent', 0, 180, null, ['child']);
+  const child = branchCard('child', 0, 0, 'parent', [], 2);
+  const neighbor = branchCard('neighbor', 320, 0);
+  const pot = { ...branchCard('pot', -350, 300), node: { id: 'pot', kind: 'pot', depth: 0, children: [] } };
+  const scene = new Map([parent, child, neighbor, pot].map(item => [item.node.id, item]));
+  const drag = new ElasticDrag(scene, 'parent');
+  let bent = false, yielded = false;
+  for (let frame = 0; frame < 150; frame++) {
+    drag.aim({ x: Math.min(600, frame * 6), y: 180 }); drag.step();
+    bent ||= Math.abs(child.x - parent.x) > 2 || Math.abs(child.y - parent.y + 180) > 2;
+    yielded ||= Math.hypot(neighbor.x - 320, neighbor.y) > 2;
+    separated(new CollisionWorld([...scene.values()]));
+  }
+  assert.ok(parent.x > 590, 'the child must not lock its parent');
+  assert.ok(bent, 'the child should flex at contact');
+  assert.ok(yielded, 'neighboring branches should yield');
+  assert.equal(pot.x, -350); assert.equal(pot.y, 300);
+  drag.release();
+  for (let frame = 0; frame < 240; frame++) { drag.step(); separated(new CollisionWorld([...scene.values()])); }
+  assert.ok(Math.hypot(neighbor.x - 320, neighbor.y) < 1, 'neighbor should spring home when clear');
+  assert.ok(Math.hypot(child.x - parent.x, child.y - parent.y + 180) < 1, 'child should return to its preferred joint');
+});
+
+test('fast direct contacts, crowds, and returning drags stay clear on every frame', () => {
+  const items = [branchCard('hand', -400, 0, null, ['tip']), branchCard('tip', -400, -160, 'hand', [], 2)];
+  for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) items.push(branchCard(`crowd-${row}-${col}`, col * 270, row * 150 - 150));
+  const scene = new Map(items.map(item => [item.node.id, item])), drag = new ElasticDrag(scene, 'hand');
+  for (const target of [{ x: 1000, y: 0 }, { x: 800, y: -380 }, { x: -400, y: 0 }]) {
+    drag.aim(target);
+    for (let frame = 0; frame < 180; frame++) { drag.step(1 / 30); separated(new CollisionWorld([...scene.values()])); }
+  }
+  assert.ok(Math.hypot(items[0].x + 400, items[0].y) < 1);
+  drag.release();
+  let running = true;
+  for (let frame = 0; frame < 600 && running; frame++) { running = drag.step(); separated(new CollisionWorld([...scene.values()])); }
+  assert.equal(running, false, 'the spring simulation must sleep after settling');
+});
+
+test('a single fast pointer movement follows the hand and still cannot cross the pot', () => {
+  const hand = branchCard('hand', 0, 0, null, ['leaf']);
+  const leaf = branchCard('leaf', 0, -170, 'hand', [], 2);
+  const pot = { ...branchCard('pot', 1000, 0), node: { id: 'pot', kind: 'pot', depth: 0, children: [] } };
+  const scene = new Map([hand, leaf, pot].map(item => [item.node.id, item])), drag = new ElasticDrag(scene, 'hand');
+  drag.aim({ x: 600, y: 0 }); drag.step(1 / 60, true);
+  assert.equal(hand.x, 600, 'unobstructed hand movement should be immediate');
+  separated(new CollisionWorld([...scene.values()]));
+  drag.aim({ x: 1600, y: 0 }); drag.step(1 / 60, true);
+  assert.ok(hand.x < 800); assert.equal(pot.x, 1000);
+  separated(new CollisionWorld([...scene.values()]));
 });

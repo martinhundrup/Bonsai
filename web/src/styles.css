@@ -21,4 +21,60 @@
 @media(hover:none){.svg-node-actions{opacity:1;pointer-events:auto}}
 .list-view .empty-root-button{position:static;transform:none;margin:24px}
 .preview-actions{display:flex;align-items:center;gap:2px}.editor-grid.preview-collapsed{grid-template-columns:minmax(0,1fr) 48px}.preview-panel.collapsed .preview-header{padding:10px 6px;justify-content:center;border-bottom:0}.preview-panel.collapsed .preview-title{display:none}.preview-panel.collapsed .preview-toggle .icon{transform:rotate(180deg)}
+.bench-heading{display:flex;justify-content:space-between;align-items:center;gap:8px}.bench-heading h2{font:400 18px var(--serif);margin:0;color:#d4e3c8}.bench-heading>span{font-size:11px;white-space:nowrap;color:var(--muted)}.bench-actions{display:flex;flex-direction:column;gap:9px}.bench-actions .primary-button{width:100%}.bench-tree-label{display:flex;flex-direction:column;gap:4px;min-width:0}.bench-tree-species{font-size:11px;color:var(--muted)}.file-select>svg{width:25px;height:29px;flex-shrink:0;color:#9fbc88}.bench-save{font-size:12px;line-height:1.6;color:#b4cc9e;margin:auto 0 0;padding-top:18px;border-top:1px solid var(--line)}.bench-save>span{display:block;margin-top:6px;font-size:11px;color:var(--muted)}.bench-save.save-failed{color:#e8b292}.bench-empty{font-size:13px;line-height:1.6;color:var(--muted)}.tree-title{min-width:0;flex:1}.tree-name{width:100%;min-width:0;background:transparent;border:1px solid transparent;border-radius:5px;color:var(--muted);padding:4px 6px;margin:3px 0 0 -6px;font-size:12px}.tree-name:hover,.tree-name:focus{border-color:#486040;background:#151e18}.species-bar{display:flex;align-items:center;gap:18px;flex-wrap:wrap;margin:-6px 0 18px}.species-bar label{display:flex;align-items:center;gap:9px;font-size:12px;color:var(--muted)}select{font:inherit;background:#1b281f;color:#d3e3c5;border:1px solid #486040;border-radius:6px;padding:8px;max-width:100%}select:focus-visible{outline:2px solid #a1c487;outline-offset:3px}.species-bar p{font-size:12px;line-height:1.6;color:#b4cc9e;margin:0}.species-bar p>span{display:block;color:var(--muted);font-size:11px}.species-hint{font-size:13px}.editor-grid{height:calc(100dvh - 330px)}.file-remove{opacity:1}
+.document-header .tree-name{font:inherit;letter-spacing:inherit;margin:0 0 0 -6px;padding:4px 6px;color:#dce6d5}.document-header .tree-name::placeholder{color:var(--muted)}
+/* Each tree carries its species palette through both layouts and the bench. */
+.editor-grid .svg-node:not(.off) .svg-card{fill:var(--foliage-fill);stroke:var(--foliage-border)}
+.editor-grid .svg-node.root:not(.off) .svg-card{fill:var(--foliage-root)}
+.editor-grid .svg-node:not(.off):is(.selected,:hover,:focus-visible) .svg-card{stroke:var(--foliage-accent)}
+.editor-grid .svg-node:not(.off) .svg-node-title{fill:#f0e9df}
+.editor-grid .svg-node:not(.off) .svg-node-value{fill:var(--foliage-detail)}
+.editor-grid .svg-expand-box,.editor-grid .svg-add-disc{fill:var(--foliage-root);stroke:var(--foliage-border)}
+.editor-grid .svg-control-line{stroke:var(--foliage-accent)}
+.editor-grid .svg-expand:is(:hover,:focus-visible) .svg-expand-box,.editor-grid :is(.svg-node-add,.svg-edge-add):is(:hover,:focus-visible) .svg-add-disc{fill:var(--foliage-fill);stroke:var(--foliage-accent)}
+.editor-grid .svg-switch.on .svg-switch-track{fill:var(--foliage-accent);stroke:var(--foliage-border)}
+.editor-grid .svg-switch.on .svg-switch-knob{fill:#18211b}
+.editor-grid .list-row:not(.off){background:var(--foliage-fill)}
+.editor-grid .list-row:not(.off):is(.selected,:hover){background:var(--foliage-root)}
+.editor-grid .list-row:not(.off) .list-key{color:#f0e9df}
+.editor-grid .list-row:not(.off) .list-value{color:var(--foliage-detail)}
+.editor-grid .node-expand{background:var(--foliage-root);border-color:var(--foliage-border);color:var(--foliage-accent)}
+.editor-grid .node-switch[aria-checked=true]{background:var(--foliage-accent);border-color:var(--foliage-border)}
+.editor-grid .node-switch[aria-checked=true]::after{background:#18211b}
+.file-item.active{background:var(--foliage-fill);border-color:var(--foliage-border)}
+.file-select>svg{color:var(--foliage-accent)}
+.species-bar label::before{content:'';width:10px;height:10px;border-radius:50%;background:var(--foliage-accent);flex-shrink:0}
+.species-bar p{color:var(--foliage-accent)}
+.node-editor .species-hint{border-left:3px solid var(--foliage-accent);padding-left:12px;color:var(--foliage-detail)}
+/* A small potting bench: living miniatures, wooden slats, and plant labels. */
+.app-shell{grid-template-columns:246px minmax(0,1fr)}
+.sidebar{background:radial-gradient(ellipse at 50% 28%,#25372955,transparent 65%),#151d18}
+.sidebar .file-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px 0;padding:4px 8px 16px;max-height:65vh;overflow-x:hidden;align-content:start}
+.file-item{position:relative;display:block;border-radius:8px 8px 4px 4px;padding:0 3px 9px;isolation:isolate}
+.file-item::before{content:'';position:absolute;left:-2px;right:-2px;top:104px;height:13px;background:repeating-linear-gradient(2deg,transparent 0 3px,#d9a16b16 4px 5px),linear-gradient(#8a6342,#66462f 45%,#493222 46%,#674a33);border-top:2px solid #ad8458;border-bottom:3px solid #36271d;box-shadow:0 6px 9px #0005;z-index:-1}
+.file-item:nth-child(odd)::after{content:'';position:absolute;left:5px;top:117px;bottom:-15px;width:6px;background:linear-gradient(90deg,#543c29,#79583b,#493422);z-index:-2}
+.file-item:nth-child(even)::after{content:'';position:absolute;right:5px;top:117px;bottom:-15px;width:6px;background:linear-gradient(90deg,#543c29,#79583b,#493422);z-index:-2}
+.file-item.active{background:linear-gradient(180deg,transparent,var(--foliage-fill));border-color:transparent;box-shadow:inset 0 -2px var(--foliage-accent)}
+.file-item:hover{background-color:#33423444}
+.file-select{width:100%;flex-direction:column;gap:0;padding:0;text-align:center}
+.file-select>.bench-miniature{width:100%;height:110px;max-width:150px;flex-shrink:0;overflow:visible}
+.bench-tree-label{width:100%;align-items:center;gap:3px;margin-top:16px;padding:0 2px}
+.file-name{max-width:100%;font-size:11px;font-weight:500}
+.bench-tree-species{font-size:9px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.file-remove{position:absolute;right:0;top:0;width:24px;height:24px;margin:0;background:#152019aa;opacity:0}
+.file-item:is(:hover,:focus-within) .file-remove{opacity:1}
+.mini-trunk{fill:none;stroke:#a77b53;stroke-linecap:round;stroke-linejoin:round}
+.mini-leaves{fill:var(--foliage-border)}.mini-leaf-light{fill:var(--foliage-accent);opacity:.7}
+.mini-pot{fill:#76513e;stroke:#b08862;stroke-width:1.2}
+.tree-view{background-image:none}
+.tree-edge-body,.mini-wood-body{fill:var(--wood-fill,#a5754d)}
+.tree-edge-grain,.mini-wood-grain{stroke:var(--wood-grain,#e3bc8e)}
+.mini-wood-grain{fill:none;stroke-width:.55;stroke-linecap:round;opacity:.4}
+.file-select{position:relative;z-index:1}.file-remove{z-index:2}
+@media(max-width:1100px) and (min-width:851px){.app-shell{grid-template-columns:220px minmax(0,1fr)}}
+@media(max-width:850px){.app-shell{display:block}.sidebar .file-list{display:flex;flex-direction:row;overflow-x:auto;padding:0 8px 18px;gap:0;max-height:none}.file-item{flex:0 0 122px}.file-select>.bench-miniature{height:110px}.file-remove{opacity:1}.bench-tree-species{font-size:10px}}
+@media(hover:none){.file-remove{opacity:1}}
+@media(min-width:1700px){.editor-grid{height:calc(100dvh - 338px)}}
+@media(max-width:850px){.sidebar{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;overflow:visible}.bench-heading{justify-content:flex-start;grid-column:1/-1}.bench-actions{flex-direction:row;grid-column:1/-1}.bench-actions .primary-button{width:auto}.file-list{grid-column:1/-1;overflow-x:auto}.bench-save{grid-column:1/-1;padding:0;border:0;margin:0}.bench-save>span{display:inline;margin-left:8px}.bench-empty{grid-column:1/-1;margin:0}.editor-grid{height:calc(100dvh - 490px)}.species-bar{gap:10px}.document-header{margin-bottom:16px}}
+@media(max-width:650px){.editor-grid{height:auto}.species-bar{align-items:flex-start;flex-direction:column}.bench-save>span{display:block;margin-left:0}.tree-title h1{font-size:20px}.document-header{gap:8px}}
 @media(max-width:650px){.preview-panel.collapsed{height:55px}.preview-panel.collapsed .preview-header{padding:10px 12px 10px 16px;justify-content:space-between}.preview-panel.collapsed .preview-title{display:block}.preview-toggle .icon{transform:rotate(-90deg)}.preview-panel.collapsed .preview-toggle .icon{transform:rotate(90deg)}}

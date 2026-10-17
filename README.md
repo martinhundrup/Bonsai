@@ -1,6 +1,6 @@
 # Bonsai
 
-A React app for exploring and pruning JSON in a bottom-rooted tree or list, with separate expansion and inclusion controls, a live preview, and export. Supports multiple files independently. Imported data stays in your browser.
+A React app for growing, exploring, and pruning JSON in a bottom-rooted tree or list, with a live preview and export. Start a blank tree or import JSON, keep your collection on the Bonsai bench, and choose a species to guide its branch style. The bench saves automatically in your browser.
 
 Live: **https://martinhundrup.com/bonsai/**
 

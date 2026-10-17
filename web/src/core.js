@@ -1,6 +1,7 @@
 // JSON paths are encoded as arrays so keys containing /, dots, or ~ stay distinct.
 export const pathId = path => JSON.stringify(path);
 export const typeOf = value => value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
+export const canAddChild = node => !!node && ['object', 'array', 'null'].includes(node.type);
 
 export function parseJson(text) {
   const clean = text.replace(/^\uFEFF/, '');
@@ -106,12 +107,12 @@ export function addNode(doc, parentId, key, value) {
     return next.nodes[0].id;
   }
   const parent = doc.byId.get(parentId);
-  if (!parent || !['object', 'array'].includes(parent.type)) throw new Error('Choose an object or array for the new node.');
+  if (!canAddChild(parent)) throw new Error('Choose an object or array, or a null node to grow.');
   const childKey = parent.type === 'array' ? String(parent.children.length) : key;
   if (parent.type === 'object' && Object.hasOwn(parent.value, childKey)) throw new Error('That key already exists. Choose another key.');
   const data = changeAt(doc.data, parent.path, current => {
     if (parent.type === 'array') return [...current, value];
-    const copy = Object.defineProperties({}, Object.getOwnPropertyDescriptors(current));
+    const copy = current === null ? {} : Object.defineProperties({}, Object.getOwnPropertyDescriptors(current));
     Object.defineProperty(copy, childKey, { value, enumerable: true, writable: true, configurable: true });
     return copy;
   });

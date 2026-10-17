@@ -3,6 +3,10 @@ import assert from 'node:assert/strict';
 import { createDocument, visibleNodes, pathId } from '../src/core.js';
 import { branchLayout, branchPaths, branchWeights, graphBounds, nodeMetrics, NODE_WIDTH, NODE_HEIGHT, ROOT_POT_HEIGHT, POT_ID, POT_NODE } from '../src/graph.js';
 import { fitCamera } from '../src/camera.js';
+import { getSpecies, species } from '../src/species.js';
+import { miniatureLayout } from '../src/miniature.js';
+import { growthPreferences } from '../src/growth.js';
+import { CollisionWorld } from '../src/collisions.js';
 
 function noOverlap(positions, nodes) {
   const sizes = new Map(nodes.map(node => [node.id, { ...nodeMetrics(node.depth, node.kind), pot: 0 }]));
@@ -139,4 +143,78 @@ test('fitting and expansion reserve the root pot as part of the graph', () => {
   const layout = branchLayout(visibleNodes(doc), new Map(), preferences, [obstacle]);
   layout.set(POT_ID, obstacle);
   noOverlap(layout, [...doc.nodes, POT_NODE]);
+});
+
+test('species change the trunk shape and thickness without moving attachment points', () => {
+  const parent = { x: 0, y: 160 }, child = { x: 90, y: 0 };
+  const paths = species.map(item => branchPaths(parent, child, 12, 2, item.trunk));
+  assert.equal(new Set(paths.map(path => path.body)).size, species.length);
+  for (const path of paths) { assert.ok(path.base > path.tip); assert.ok(!/NaN|Infinity/.test(path.body)); assert.ok(path.grain.startsWith('M0,160')); assert.ok(path.grain.endsWith('90,0')); }
+  assert.ok(branchPaths(parent, child, 12, 2, getSpecies('ficus').trunk).base > branchPaths(parent, child, 12, 2, getSpecies('maple').trunk).base);
+});
+
+test('miniatures keep wide trees tall and include deep branches', () => {
+  const wide = createDocument('wide', Object.fromEntries(Array.from({ length: 150 }, (_, i) => [`branch${i}`, { leaf: i }])));
+  let data = null; for (let i = 0; i < 85; i++) data = { shoot: data };
+  const deep = createDocument('deep', data);
+  for (const doc of [wide, deep]) {
+    const preview = miniatureLayout(doc), positions = [...preview.positions.values()];
+    assert.equal(Math.max(...positions.map(p => p.y)) - Math.min(...positions.map(p => p.y)), 74);
+    assert.ok(preview.nodes.length <= 280);
+    assert.ok(positions.every(p => p.x >= 34 && p.x <= 126 && p.y >= 12 && p.y <= 86));
+  }
+  assert.equal(miniatureLayout(deep).nodes.length, deep.nodes.length);
+  const crowded = createDocument('crowded', Array.from({ length: 1000 }, (_, i) => i));
+  const overview = miniatureLayout(crowded);
+  assert.ok(overview.positions.has(pathId(['0'])));
+  assert.ok(overview.positions.has(pathId(['999'])));
+});
+
+test('miniatures preserve the relative placement of manually arranged nodes', () => {
+  const doc = createDocument('placed', { a: 1, b: 2 }), a = pathId(['a']), b = pathId(['b']);
+  doc.arrangement = { positions: new Map([['[]', { x: 200, y: 0 }], [a, { x: 600, y: -400 }], [b, { x: -100, y: -200 }]]), pot: { x: 200, y: 116 } };
+  let preview = miniatureLayout(doc);
+  assert.ok(preview.positions.get(a).x > preview.positions.get(b).x);
+  assert.ok(preview.positions.get(a).y < preview.positions.get(b).y);
+  doc.arrangement.positions.set(a, { x: -800, y: -100 });
+  preview = miniatureLayout(doc);
+  assert.ok(preview.positions.get(a).x < preview.positions.get(b).x);
+  assert.ok(preview.positions.get(a).y > preview.positions.get(b).y);
+  doc.excluded.add(a);
+  assert.equal(miniatureLayout(doc).positions.has(a), false);
+});
+
+test('species have distinct growth structures rather than rows at different spacing', () => {
+  const data = Object.fromEntries(Array.from({ length: 7 }, (_, i) => [`b${i}`, { a: 1, b: 2, c: 3, d: 4 }]));
+  const doc = createDocument('growth', data), children = doc.nodes[0].children;
+  const rules = Object.fromEntries(species.map(style => [style.id, growthPreferences(doc.nodes, style.id)]));
+  for (const style of species) {
+    const prefs = rules[style.id], ys = children.map(id => prefs.get(id).y);
+    assert.ok(Math.max(...ys) - Math.min(...ys) > 70, `${style.id} should not form a straight row`);
+    assert.deepEqual(growthPreferences(doc.nodes, style.id), prefs, 'growth is deterministic');
+  }
+  assert.ok(rules.maple.get(children[3]).y < rules.maple.get(children[0]).y - 60, 'maple grows an arched fan');
+  assert.ok(Math.abs(rules.pine.get(children[0]).x) < 30, 'pine maintains an upright apex');
+  assert.ok(rules.pine.get(children[1]).x * rules.pine.get(children[2]).x < 0, 'pine pads alternate sides');
+  assert.ok(children.every(id => rules.juniper.get(id).x > 100), 'juniper grows with the wind');
+  assert.ok([...rules.ficus.values()].some(p => p.y > 0), 'ficus has hanging aerial branches');
+  assert.ok(getSpecies('ficus').trunk.thickness / getSpecies('maple').trunk.thickness > 3.5, 'trunk girth should be visibly distinct');
+});
+
+test('all species keep complex crowns collision-free, repeatable, and anchored', () => {
+  const doc = createDocument('canopy', Object.fromEntries(Array.from({ length: 8 }, (_, i) => [`limb${i}`, { a: { x: 1, y: 2 }, b: [1,2,3], c: 3, d: 4 }])));
+  const root = { x: -40, y: 80 }, pot = { node: POT_NODE, x: 20, y: 220 };
+  for (const style of species) {
+    const preferences = new Map();
+    const layout = branchLayout(doc.nodes, new Map([['[]', root]]), preferences, [pot], style);
+    assert.deepEqual(layout.get('[]'), root);
+    const items = [...layout].map(([id, p]) => ({ node: doc.byId.get(id), ...p }));
+    const world = new CollisionWorld([...items, pot]);
+    for (const item of [...items, pot]) assert.ok(world.canPlace(item), `${style.id}: overlapping ${item.node.id}`);
+    assert.deepEqual(branchLayout(doc.nodes, layout, preferences, [pot], style), layout);
+    const manualId = pathId(['limb0']);
+    preferences.set(manualId, { x: -500, y: -260 });
+    branchLayout(doc.nodes, layout, preferences, [pot], style);
+    assert.deepEqual(preferences.get(manualId), { x: -500, y: -260 }, 'manual preferences survive normal layout updates');
+  }
 });

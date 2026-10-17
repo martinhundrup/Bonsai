@@ -1,4 +1,6 @@
-﻿export const NODE_WIDTH = 216;
+import { growthPreferences } from './growth.js';
+
+export const NODE_WIDTH = 216;
 export const NODE_HEIGHT = 84;
 export const ROOT_POT_HEIGHT = 88;
 export const POT_ID = '@bonsai-pot';
@@ -18,7 +20,7 @@ export function nodeMetrics(depth = 0, kind) {
 // the weighted balance keeps its desired parent-relative offset where possible.
 // Preferences are separate from solved positions, so folding releases space
 // again instead of gradually pushing the tree farther apart.
-export function branchLayout(nodes, saved = new Map(), preferences = new Map(), obstacles = []) {
+export function branchLayout(nodes, saved = new Map(), preferences = new Map(), obstacles = [], style) {
   if (!nodes.length) return new Map();
   const byId = new Map(nodes.map(node => [node.id, node])), plans = new Map();
   const visibleChildren = node => node.children.filter(id => byId.has(id));
@@ -36,6 +38,7 @@ export function branchLayout(nodes, saved = new Map(), preferences = new Map(), 
     return shifted;
   }
   const childrenById = new Map(nodes.map(node => [node.id, visibleChildren(node)]));
+  const growth = style ? growthPreferences(nodes, style.id) : null;
   for (const node of nodes) {
     const children = childrenById.get(node.id);
     for (let i = 0; i < children.length; i++) {
@@ -43,7 +46,7 @@ export function branchLayout(nodes, saved = new Map(), preferences = new Map(), 
       if (preferences.has(id)) continue;
       const child = saved.get(id), parent = saved.get(node.id);
       const step = nodeMetrics(byId.get(id).depth).width + GAP;
-      preferences.set(id, child && parent ? { x: child.x - parent.x, y: child.y - parent.y } : { x: (i - (children.length - 1) / 2) * step, y: -LEVEL });
+      preferences.set(id, growth?.get(id) ?? (child && parent ? { x: child.x - parent.x, y: child.y - parent.y } : { x: (i - (children.length - 1) / 2) * step, y: -LEVEL }));
     }
   }
   for (let index = nodes.length - 1; index >= 0; index--) {
@@ -123,17 +126,21 @@ export function branchWeights(nodes) {
 
 // Closed, tapered wood ribbons share a stem before they fork. The center grain
 // follows the same curve, including when cards are dragged below their parent.
-export function branchPaths(parent, child, parentWeight = 1, childWeight = 1) {
+export function branchPaths(parent, child, parentWeight = 1, childWeight = 1, style = {}) {
   const a = parent.angle ?? 0, b = child.angle ?? 0;
-  const base = Math.min(13, 2 + Math.sqrt(parentWeight) * 1.6);
-  const tip = Math.min(base * .8, 1.2 + Math.sqrt(childWeight) * .85);
+  const thickness = style.thickness ?? 1;
+  const base = style.baseRadius ?? Math.min(13, 2 + Math.sqrt(parentWeight) * 1.6) * thickness;
+  const tip = style.tipRadius ?? Math.min(base * (style.taper ?? .8), (1.2 + Math.sqrt(childWeight) * .85) * Math.sqrt(thickness));
   const distance = Math.hypot(child.x - parent.x, child.y - parent.y);
-  const stem = Math.min(30, distance * .28), bend = Math.max(24, Math.abs(parent.y - child.y) * .4);
+  const stem = Math.min(30, distance * .28) * (style.stem ?? 1), bend = Math.max(24, Math.abs(parent.y - child.y) * .4) * (style.bend ?? 1);
+  const twist = Math.min(130, distance) * (style.twist ?? 0);
   const fork = { x: parent.x + Math.sin(a) * stem, y: parent.y - Math.cos(a) * stem };
-  const first = { x: fork.x + Math.sin(a) * bend, y: fork.y - Math.cos(a) * bend };
-  const second = { x: child.x - Math.sin(b) * bend, y: child.y + Math.cos(b) * bend };
+  const first = { x: fork.x + Math.sin(a) * bend + Math.cos(a) * twist, y: fork.y - Math.cos(a) * bend + Math.sin(a) * twist };
+  const second = { x: child.x - Math.sin(b) * bend - Math.cos(b) * twist, y: child.y + Math.cos(b) * bend - Math.sin(b) * twist };
   const p = (point, angle, radius, side) => `${point.x + Math.cos(angle) * radius * side},${point.y + Math.sin(angle) * radius * side}`;
-  const body = `M${p(parent,a,base,-1)} L${p(fork,a,base*.78,-1)} C${p(first,a,base*.7,-1)} ${p(second,b,tip,-1)} ${p(child,b,tip,-1)} L${p(child,b,tip,1)} C${p(second,b,tip,1)} ${p(first,a,base*.7,1)} ${p(fork,a,base*.78,1)} L${p(parent,a,base,1)} Z`;
+  const width = t => base + (tip - base) * t;
+  const forkWidth = width(Math.min(.25, stem / Math.max(1, distance)));
+  const body = `M${p(parent,a,base,-1)} L${p(fork,a,forkWidth,-1)} C${p(first,a,width(.35),-1)} ${p(second,b,width(.75),-1)} ${p(child,b,tip,-1)} L${p(child,b,tip,1)} C${p(second,b,width(.75),1)} ${p(first,a,width(.35),1)} ${p(fork,a,forkWidth,1)} L${p(parent,a,base,1)} Z`;
   const grain = `M${parent.x},${parent.y} L${fork.x},${fork.y} C${first.x},${first.y} ${second.x},${second.y} ${child.x},${child.y}`;
   const midpoint = { x: (fork.x + 3 * first.x + 3 * second.x + child.x) / 8, y: (fork.y + 3 * first.y + 3 * second.y + child.y) / 8 };
   return { body, grain, base, tip, midpoint };

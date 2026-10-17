@@ -1,8 +1,12 @@
 import { memo, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { isIncluded } from '../core.js';
+import { isIncluded, canAddChild } from '../core.js';
 import { branchLayout, branchPaths, branchWeights, graphBounds, nodeMetrics, NODE_WIDTH, NODE_HEIGHT, POT_ID, POT_NODE } from '../graph.js';
 import { cameraViewBox, fitCamera, zoomCamera } from '../camera.js';
+import { getSpecies } from '../species.js';
 import { CollisionWorld } from '../collisions.js';
+import { ElasticDrag } from '../elastic.js';
+import { growthPreferences } from '../growth.js';
+import { trunkProfile, trunkSettings } from '../trunk.js';
 import { typeLabel, typeSymbols } from './Shared.jsx';
 
 const initialCamera = { x: 0, y: 0, scale: 1 };
@@ -41,7 +45,7 @@ function AddControl({ label, onClick, className = 'svg-edge-add' }) {
 function Edge({ id, parent, off, register, onAdd }) {
   return <g ref={element => register(id, element)} data-edge-id={id} className={`tree-edge ${off ? 'off' : ''}`}>
     <path className="tree-edge-body" /><path className="tree-edge-grain" /><path className="tree-edge-hit" />
-    {parent && ['object', 'array'].includes(parent.type) && <AddControl label={`Add node to ${parent.key}`} onClick={() => onAdd(parent.id)} />}
+    {canAddChild(parent) && <AddControl label={`Add node to ${parent.key}`} onClick={() => onAdd(parent.id)} />}
   </g>;
 }
 
@@ -64,7 +68,7 @@ const SvgNode = memo(function SvgNode({ node, included, ownIncluded, collapsed, 
     </g>}
     <g className="svg-node-actions" transform="translate(44 -19)">
       <rect x="-15" y="-15" width="64" height="35" fill="transparent" />
-      {['object', 'array'].includes(node.type) && <AddControl className="svg-node-add" label={`Add node to ${node.key}`} onClick={() => onAdd(node.id)} />}
+      {canAddChild(node) && <AddControl className="svg-node-add" label={`Add node to ${node.key}`} onClick={() => onAdd(node.id)} />}
       <g transform="translate(34 0)" className="svg-node-delete" role="button" tabIndex={exiting ? -1 : 0} aria-label={`Delete ${node.key}`} onClick={event => activate(event, () => onDelete(node.id))} onKeyDown={event => activate(event, () => onDelete(node.id))}><title>Delete node and its children</title><circle className="svg-add-disc" r="13" /><path className="svg-delete-line" d="M-5-4H5M-3-4V5H3V-4M-2-7H2" /></g>
     </g>
   </g>;
@@ -72,14 +76,33 @@ const SvgNode = memo(function SvgNode({ node, included, ownIncluded, collapsed, 
 
 // Animate SVG geometry directly, keeping the keyed cards mounted and React out
 // of the animation loop. Stationary cards retain their positions and markup.
-function useBranches(doc, nodes) {
+function useBranches(doc, nodes, onDirty) {
   const documents = useRef(new Map()), scene = useRef(new Map()), elements = useRef(new Map()), edges = useRef(new Map());
   const documentId = useRef(null), frame = useRef(0), reduced = useRef(false);
+  const layoutInputs = useRef(null);
+  const elastic = useRef(null);
+  const liveDoc = useRef(doc); liveDoc.current = doc;
   const [entries, setEntries] = useState([]);
   const weights = useMemo(() => branchWeights(doc?.nodes ?? []), [doc?.nodes]);
   const weightsRef = useRef(weights); weightsRef.current = weights;
+  const trunkRef = useRef(null); trunkRef.current = getSpecies(doc?.species).trunk;
+  const anatomy = useMemo(() => ({ nodes: doc?.nodes ?? [], growth: growthPreferences(doc?.nodes ?? [], doc?.species), settings: trunkSettings(doc) }), [doc?.nodes, doc?.species, doc?.trunkSettings]);
+  const anatomyRef = useRef(anatomy); anatomyRef.current = anatomy;
   const liveNodes = useRef(nodes); liveNodes.current = nodes;
+  const savePlacement = useCallback(() => {
+    const arrangement = documents.current.get(documentId.current);
+    if (!arrangement) return;
+    for (const [id, item] of scene.current) {
+      if (item.pending || item.exiting) continue;
+      if (id === POT_ID) arrangement.pot = { ...item };
+      else arrangement.positions.set(id, { x: item.x, y: item.y });
+    }
+    if (arrangement.positions.has('[]')) arrangement.lastRoot = arrangement.positions.get('[]');
+    if (liveDoc.current?.id === documentId.current) liveDoc.current.arrangement = arrangement;
+  }, []);
   const paint = useCallback(() => {
+    const potPoint = scene.current.get(POT_ID) ?? { x: 0, y: 116 };
+    const profile = trunkProfile(anatomyRef.current.nodes, scene.current, potPoint, trunkRef.current, anatomyRef.current.settings, anatomyRef.current.growth);
     for (const [id, item] of scene.current) {
       const element = elements.current.get(id);
       if (element) {
@@ -95,14 +118,14 @@ function useBranches(doc, nodes) {
         const parentHalf = nodeMetrics(parent.node.depth).height / 2, childHalf = nodeMetrics(item.node.depth).height / 2;
         const x1 = parent.x + Math.sin(a) * parentHalf, y1 = parent.y + (1 - Math.cos(a)) * parentHalf;
         const x2 = item.x - Math.sin(b) * childHalf, y2 = item.y + (1 + Math.cos(b)) * childHalf;
-        const paths = branchPaths({ x: x1, y: y1, angle: a }, { x: x2, y: y2, angle: b }, weightsRef.current.get(item.node.parent), weightsRef.current.get(id));
+        const paths = branchPaths({ x: x1, y: y1, angle: a }, { x: x2, y: y2, angle: b }, weightsRef.current.get(item.node.parent), weightsRef.current.get(id), { ...trunkRef.current, ...profile.edge(item.node) });
         paintEdge(edge, paths, Math.min(item.opacity, parent.opacity));
       }
     }
     const root = scene.current.get('[]'), pot = scene.current.get(POT_ID), stem = edges.current.get(POT_ID);
     if (root && pot && stem) {
       const half = nodeMetrics(root.node.depth).height / 2, angle = (root.angle ?? 0) * Math.PI / 180;
-      const paths = branchPaths({ x: pot.x, y: pot.y + 11 }, { x: root.x - Math.sin(angle) * half, y: root.y + (1 + Math.cos(angle)) * half, angle }, weightsRef.current.get('[]'), weightsRef.current.get('[]'));
+      const paths = branchPaths({ x: pot.x, y: pot.y + 11 }, { x: root.x - Math.sin(angle) * half, y: root.y + (1 + Math.cos(angle)) * half, angle }, weightsRef.current.get('[]'), weightsRef.current.get('[]'), { ...trunkRef.current, ...profile.edge(root.node) });
       paintEdge(stem, paths, root.opacity);
     }
   }, []);
@@ -116,6 +139,14 @@ function useBranches(doc, nodes) {
       item.opacity = m.opacity + (m.toOpacity - m.opacity) * fade;
       item.angle = t === 1 ? 0 : Math.sin(t * Math.PI * 4) * Math.sin(t * Math.PI) * (1 - t) * 3;
       if (item.exiting && t === 1) { scene.current.delete(id); removed = true; }
+    }
+    if (elastic.current) {
+      const simulation = elastic.current;
+      const running = simulation.step((now - (simulation.last ?? now - 16)) / 1000);
+      simulation.last = now;
+      savePlacement();
+      if (running) active = true;
+      else { elastic.current = null; onDirty(); }
     }
     const world = new CollisionWorld([...scene.current.values()].filter(item => !item.pending && item.opacity > .001));
     for (const [id, item] of scene.current) {
@@ -147,7 +178,7 @@ function useBranches(doc, nodes) {
     paint();
     if (removed) setEntries([...scene.current.values()]);
     if (active) frame.current = requestAnimationFrame(animate);
-  }, [paint]);
+  }, [paint, savePlacement, onDirty]);
   const wake = useCallback(() => { if (!frame.current) frame.current = requestAnimationFrame(tick); }, [tick]);
   useLayoutEffect(() => {
     const media = matchMedia('(prefers-reduced-motion: reduce)');
@@ -156,28 +187,46 @@ function useBranches(doc, nodes) {
     return () => { media.removeEventListener('change', update); cancelAnimationFrame(frame.current); frame.current = 0; };
   }, [wake]);
   useLayoutEffect(() => {
+    const previous = layoutInputs.current;
+    // Strict Mode reconnects effects on mount. Keep the restored placement
+    // intact instead of solving it again from the spring preferences.
+    if (previous?.id === doc?.id && previous?.nodes === nodes && previous?.species === doc?.species && scene.current.size) { paint(); wake(); return; }
+    layoutInputs.current = { id: doc?.id, nodes, species: doc?.species };
     const changed = documentId.current !== doc?.id;
+    if (elastic.current) { savePlacement(); elastic.current = null; }
     documentId.current = doc?.id;
     if (changed) { scene.current.clear(); cancelAnimationFrame(frame.current); frame.current = 0; }
     if (!doc) { setEntries([]); return; }
-    const arrangement = documents.current.get(doc.id) ?? { positions: new Map(), preferences: new Map() };
+    const arrangement = documents.current.get(doc.id) ?? doc.arrangement ?? { positions: new Map(), preferences: new Map() };
+    const speciesChanged = arrangement.species !== doc.species;
+    if (speciesChanged) { arrangement.preferences = new Map(); arrangement.species = doc.species; }
     if (!arrangement.pot) {
       const root = arrangement.positions.get('[]') ?? { x: 0, y: 0 };
       arrangement.pot = { node: POT_NODE, x: root.x, y: root.y + NODE_HEIGHT + 32, opacity: 1, angle: 0 };
     }
+    arrangement.pot = { ...arrangement.pot, node: POT_NODE, opacity: 1, angle: 0 };
     if (!scene.current.has(POT_ID)) scene.current.set(POT_ID, { ...arrangement.pot });
     if (nodes.length && !arrangement.positions.has('[]')) {
       const root = arrangement.lastRoot ?? { x: arrangement.pot.x, y: arrangement.pot.y - NODE_HEIGHT - 32 };
       const world = new CollisionWorld([arrangement.pot]);
       arrangement.positions.set('[]', world.canPlace({ node: nodes[0], ...root }) ? root : { x: arrangement.pot.x, y: arrangement.pot.y - NODE_HEIGHT - 32 });
     }
-    const restorePlacement = changed && nodes.length === arrangement.positions.size && nodes.every(node => arrangement.positions.has(node.id));
-    const positions = restorePlacement ? arrangement.positions : branchLayout(nodes, arrangement.positions, arrangement.preferences, [arrangement.pot]);
+    const restorePlacement = changed && !speciesChanged && nodes.length === arrangement.positions.size && nodes.every(node => arrangement.positions.has(node.id));
+    const positions = restorePlacement ? arrangement.positions : branchLayout(nodes, arrangement.positions, arrangement.preferences, [arrangement.pot], getSpecies(doc.species));
     const visible = new Set(nodes.map(node => node.id)), affected = new Set();
     visible.add(POT_ID);
+    if (speciesChanged) for (const [id] of scene.current) {
+      // A restyle can interrupt folding. Retired cards must disappear before
+      // the new crown occupies their old space.
+      if (visible.has(id)) continue;
+      elements.current.get(id)?.setAttribute('opacity', '0');
+      scene.current.delete(id);
+    }
     arrangement.positions = positions;
     if (positions.has('[]')) arrangement.lastRoot = positions.get('[]');
     documents.current.set(doc.id, arrangement);
+    doc.arrangement = arrangement;
+    onDirty();
     const now = performance.now();
     function ancestor(node) {
       let parent = doc.byId.get(node.parent);
@@ -188,6 +237,13 @@ function useBranches(doc, nodes) {
       let item = scene.current.get(node.id);
       if (item) item.node = node;
       const target = positions.get(node.id), parent = ancestor(node);
+      if (item && speciesChanged) {
+        // Restyling is an explicit whole-tree operation. Commit the complete
+        // collision-free solution together so old animation paths cannot pin
+        // crossing branches to the previous species' silhouette.
+        Object.assign(item, { x: target.x, y: target.y, opacity: 1, angle: 0, motion: null, pending: false, exiting: false });
+        continue;
+      }
       if (item && !item.exiting) {
         const previous = item.motion ? { x: item.motion.toX, y: item.motion.toY } : item;
         if (Math.hypot(previous.x - target.x, previous.y - target.y) > .01) {
@@ -220,62 +276,67 @@ function useBranches(doc, nodes) {
       }
     }
     setEntries([...scene.current.values()]); paint(); wake();
-  }, [doc?.id, nodes, paint, wake]);
-  useLayoutEffect(paint, [entries, paint]);
+  }, [doc?.id, doc?.species, nodes, paint, wake, onDirty, savePlacement]);
+  useLayoutEffect(paint, [entries, paint, doc?.trunkSettings]);
   const register = useCallback((id, element) => { if (element) elements.current.set(id, element); else elements.current.delete(id); }, []);
   const registerEdge = useCallback((id, element) => { if (element) edges.current.set(id, element); else edges.current.delete(id); }, []);
   const move = useCallback((id, point) => {
     const item = scene.current.get(id);
     if (!item || item.exiting) return;
-    // Sweep the branch as one rigid group, sliding along stationary siblings
-    // and ancestors instead of allowing it to tunnel through their cards.
-    const requested = { x: point.x - item.x, y: point.y - item.y }, stack = [id], moving = [];
-    const arrangement = documents.current.get(documentId.current);
-    while (stack.length) {
-      const next = stack.pop(), entry = scene.current.get(next);
-      if (!entry || entry.exiting) continue;
-      moving.push(next); stack.push(...entry.node.children);
-    }
-    const world = new CollisionWorld([...scene.current.values()].filter(entry => !entry.pending && entry.opacity > .001));
-    const delta = world.move(moving, requested);
-    for (const next of moving) {
-      const entry = scene.current.get(next);
-      entry.x += delta.x; entry.y += delta.y;
-      if (next === id) { entry.motion = null; entry.angle = 0; entry.opacity = 1; }
-      else if (entry.motion) {
-        entry.motion.x += delta.x; entry.motion.y += delta.y;
-        entry.motion.toX += delta.x; entry.motion.toY += delta.y;
+    if (id === POT_ID) {
+      elastic.current = null;
+      const world = new CollisionWorld([...scene.current.values()].filter(entry => !entry.pending && entry.opacity > .001));
+      const delta = world.move([id], { x: point.x - item.x, y: point.y - item.y });
+      item.x += delta.x; item.y += delta.y;
+    } else {
+      if (!elastic.current || elastic.current.id !== id || !elastic.current.held) {
+        for (const entry of scene.current.values()) if (!entry.exiting && !entry.pending) { entry.motion = null; entry.angle = 0; entry.opacity = 1; }
+        elastic.current = new ElasticDrag(scene.current, id);
       }
-      if (next === POT_ID) arrangement.pot = { ...entry };
-      else {
-        arrangement.positions.set(next, { x: entry.motion?.toX ?? entry.x, y: entry.motion?.toY ?? entry.y });
-        if (next === '[]') arrangement.lastRoot = arrangement.positions.get(next);
-      }
+      elastic.current.aim(point);
+      elastic.current.step(1 / 60, true);
+      wake();
     }
-    paint();
-  }, [paint]);
+    savePlacement(); paint(); onDirty();
+  }, [paint, wake, savePlacement, onDirty]);
   const bounds = useCallback(() => graphBounds(new Map([...scene.current].filter(([, item]) => !item.exiting).map(([id, item]) => [id, { x: item.motion?.toX ?? item.x, y: item.motion?.toY ?? item.y, depth: item.node.depth, kind: item.node.kind }]))), []);
   const commitPlacement = useCallback(() => {
     const arrangement = documents.current.get(documentId.current);
     if (!arrangement) return;
+    const simulation = elastic.current;
+    if (simulation) {
+      // Keep the original flexible joints as their preferred shape. Only the
+      // node deliberately moved by the user gets a new parent-relative anchor.
+      for (const id of simulation.followers) {
+        if (id !== simulation.id && simulation.offsets.has(id)) arrangement.preferences.set(id, simulation.offsets.get(id));
+      }
+      simulation.release();
+      const item = scene.current.get(simulation.id), parent = scene.current.get(item?.node.parent);
+      if (parent) arrangement.preferences.set(simulation.id, { x: item.x - parent.x, y: item.y - parent.y });
+      savePlacement(); onDirty(); wake(); return;
+    }
     for (const node of liveNodes.current) {
       const parent = arrangement.positions.get(node.parent), child = arrangement.positions.get(node.id);
       if (parent && child) arrangement.preferences.set(node.id, { x: child.x - parent.x, y: child.y - parent.y });
     }
-  }, []);
+    if (liveDoc.current) liveDoc.current.arrangement = arrangement;
+    onDirty();
+  }, [onDirty, savePlacement, wake]);
   return { entries, scene, register, registerEdge, move, bounds, commitPlacement };
 }
 
-export default function TreeCanvas({ doc, nodes, hidden, query, graphApi, onZoom, onSelect, onToggle, onCollapse, onAdd, onDelete }) {
+export default function TreeCanvas({ doc, nodes, hidden, query, graphApi, onZoom, onSelect, onToggle, onCollapse, onAdd, onDelete, onDirty }) {
   const container = useRef(null), cameras = useRef(new Map()), cameraRef = useRef(initialCamera), drag = useRef(null), pointers = useRef(new Map());
   const currentDoc = useRef(null), suppressClick = useRef(false), viewport = useRef({ width: 0, height: 0 });
   const [camera, setCameraState] = useState(initialCamera), [size, setSize] = useState({ width: 1, height: 1 }), [dragging, setDragging] = useState(false);
-  const { entries, scene, register, registerEdge, move, bounds, commitPlacement } = useBranches(doc, nodes);
+  const { entries, scene, register, registerEdge, move, bounds, commitPlacement } = useBranches(doc, nodes, onDirty);
+  const liveDoc = useRef(doc); liveDoc.current = doc;
   const setCamera = useCallback(next => {
     cameraRef.current = next; setCameraState(next);
     if (currentDoc.current) cameras.current.set(currentDoc.current, next);
+    if (liveDoc.current?.id === currentDoc.current) { liveDoc.current.camera = next; onDirty(); }
     onZoom(Math.round(next.scale * 100));
-  }, [onZoom]);
+  }, [onZoom, onDirty]);
   const fit = useCallback((opening = false) => {
     // Vite can mount React before its imported stylesheet finishes loading.
     if (!container.current || getComputedStyle(container.current).touchAction !== 'none') return;
@@ -295,7 +356,7 @@ export default function TreeCanvas({ doc, nodes, hidden, query, graphApi, onZoom
   useLayoutEffect(() => {
     if (currentDoc.current === doc?.id) return;
     currentDoc.current = doc?.id; drag.current = null; pointers.current.clear(); setDragging(false);
-    if (cameras.current.has(doc?.id)) setCamera(cameras.current.get(doc.id)); else fit(true);
+    if (cameras.current.has(doc?.id)) setCamera(cameras.current.get(doc.id)); else if (doc?.camera) setCamera(doc.camera); else fit(true);
   }, [doc?.id, fit, setCamera]);
   useLayoutEffect(() => {
     const observer = new ResizeObserver(([entry]) => {
@@ -390,9 +451,11 @@ export default function TreeCanvas({ doc, nodes, hidden, query, graphApi, onZoom
   }
   const root = doc?.nodes[0], rootValue = root && !['array', 'object'].includes(root.type) ? JSON.stringify(root.value) : '';
   const noMatches = query.trim() && nodes.length === 1 && !`${doc?.name} ${rootValue}`.toLowerCase().includes(query.trim().toLowerCase());
+  const gridStep = 20 * 2 ** Math.max(0, Math.ceil(Math.log2(1 / camera.scale)));
   return <div id="tree-view" ref={container} role="tabpanel" aria-labelledby="tree-tab" className={`tree-view ${dragging ? 'dragging' : ''}`} hidden={hidden} tabIndex={0} aria-label="JSON tree. Drag nodes to move them or the background to pan. Scroll to zoom. Arrow keys move a focused node or pan the canvas." onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp} onLostPointerCapture={pointerUp} onKeyDown={keyDown} onClickCapture={event => { if (suppressClick.current) { event.stopPropagation(); suppressClick.current = false; } }}>
     {!!entries.length && doc && <svg id="graph-world" className="tree-svg" width="100%" height="100%" viewBox={cameraViewBox(camera, size)} preserveAspectRatio="none" aria-label="Bottom-rooted JSON tree">
-      <defs><linearGradient id="bonsai-pot-glaze" x1="0" y1="0" x2=".8" y2="1"><stop offset="0" stopColor="#946044" /><stop offset=".5" stopColor="#704936" /><stop offset="1" stopColor="#4c352b" /></linearGradient></defs>
+      <defs><linearGradient id="bonsai-pot-glaze" x1="0" y1="0" x2=".8" y2="1"><stop offset="0" stopColor="#946044" /><stop offset=".5" stopColor="#704936" /><stop offset="1" stopColor="#4c352b" /></linearGradient><pattern id="bonsai-dot-grid" patternUnits="userSpaceOnUse" width={gridStep} height={gridStep}><circle cx={gridStep / 2} cy={gridStep / 2} r={.8 / camera.scale} fill="#304034" /></pattern></defs>
+      <rect className="world-grid" x={-camera.x / camera.scale} y={-camera.y / camera.scale} width={size.width / camera.scale} height={size.height / camera.scale} fill="url(#bonsai-dot-grid)" />
       <g>{scene.current.has('[]') && <Edge id={POT_ID} parent={doc.byId.get('[]')} register={registerEdge} onAdd={onAdd} />}{entries.filter(item => item.node.parent !== null && scene.current.has(item.node.parent)).map(({ node }) => <Edge key={node.id} id={node.id} parent={doc.byId.get(node.parent)} off={!isIncluded(doc, node)} register={registerEdge} onAdd={onAdd} />)}</g>
       {entries.map(({ node, exiting }) => node.kind === 'pot' ? <g key={POT_ID} ref={element => register(POT_ID, element)} className="pot-node" data-node-id={POT_ID} role="group" tabIndex={0} aria-label="Bonsai pot. Drag independently of the root." onPointerDown={event => nodePointerDown(event, POT_ID)} onClick={event => event.stopPropagation()}><RootPot /></g> : <SvgNode key={node.id} node={node} included={isIncluded(doc, node)} ownIncluded={!doc.excluded.has(node.id)} collapsed={doc.collapsed.has(node.id)} selected={doc.selected === node.id} exiting={exiting} register={register} onDrag={nodePointerDown} onSelect={onSelect} onToggle={onToggle} onCollapse={onCollapse} onAdd={onAdd} onDelete={onDelete} />)}
     </svg>}
